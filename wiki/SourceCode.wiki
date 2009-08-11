@@ -2,7 +2,7 @@
 
 = Use Git =
 
-The source code is at GitHub:
+The source code is at !GitHub:
 
   http://github.com/bradfitz/android-squeezer/tree/master
 
