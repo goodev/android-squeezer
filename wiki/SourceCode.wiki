@@ -1,0 +1,11 @@
+#summary location of source code for Squeezer
+
+= Use Git =
+
+The source code is at GitHub:
+
+  http://github.com/bradfitz/android-squeezer/tree/master
+
+To check it out:
+
+  $ git clone git://github.com/bradfitz/android-squeezer.git
