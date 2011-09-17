@@ -4,8 +4,8 @@
 
 The source code is at !GitHub:
 
-  http://github.com/bradfitz/android-squeezer/tree/master
+  http://github.com/nikclayton/android-squeezer/tree/master
 
 To check it out:
 
-  $ git clone git://github.com/bradfitz/android-squeezer.git
+  $ git clone git://github.com/nikclayton/android-squeezer.git
