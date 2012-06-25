@@ -1,0 +1,66 @@
+#summary Overview of how the cache-server-data branch works
+
+= The cache-server-data branch =
+
+The cache-server-data branch has experimental code that implements a cache of data returned from the server, so that the client doesn't have to re-fetch it every time (for example) the list of all songs is displayed.
+
+Other benefits:
+
+  * A lot of the specialised view logic can disappear, since we're just loading database rows in to views.
+  * We can use CursorLoaders to get asynchronous loading of the data for free.
+  * Homescreen widgets can query the content provider and not re-implement a lot of the application logic.
+
+Note that this is still very much a work in progress.  Many of the classes are probably not in their final location yet.
+
+= The implementation =
+
+Walking through the activity that lists all the artists, ArtistsListActivity.
+
+We create the class as normal, and select the `artists_list_activity` layout.
+
+{{{
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.artists_list_activity);
+    }
+}}}
+
+This layout contains a reference `ArtistsListFragment`, which subclasses [http://developer.android.com/reference/android/app/ListFragment.html ListFragment] to display a list of items.
+
+Most of the rest of the work is in `ArtistsListFragment` or classes it calls.
+
+`ArtistsListFragment` requires that activities that host it implement the `OnArtistSelectedListener` interface, which the fragment will use to call back to the containing activity when the user has selected an artist.
+
+The fragment uses a cursor loader which it initialises to use the fragment as the source of callback methods (a common pattern, see http://developer.android.com/guide/components/loaders.html#starting).
+
+{{{
+getLoaderManager().initLoader(0, null, this);
+}}}
+
+This will call `onCreateLoader()`.
+
+{{{
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        return new CursorLoader(getActivity(),
+                ProviderUri.ARTIST.getContentUri(),
+                boundColumns, null, null, null);
+    }
+}}}
+
+In this case, `boundColumns` is an array that references just the ID and artist name columns in the database, and the three nulls indicate that all the data will be returned in the default sort order.
+
+The call to `ProviderUri.ARTIST.getContentUri()` results in a call to `ArtistCacheProvider.query()`.  This is implemented in `GenericCacheProvider.query()`, which creates a `GenericCacheCursor`, and calls the abstract `WrapCursor()` method. `ArtistCacheProvider` implements `WrapCursor()`, and the result is that a new `ArtistCacheCursor` is loaded.
+
+So far this is all pretty standard techniques for populating a list with data from a SQLite database on Android.  Where it differs is the additional special responsibilities that the cursor and provider have.
+
+== Cursor ==
+
+The cursors override `getString()`, which is called whenever the list needs to display some data for a row.
+
+A cursor knows whether "live updates" of data are currently in effect.  Data is updated live if the list is not being flung.  
+
+The overridden method checks to see if there is any data for this column in this row.  If there isn't it 
+assumes that the data has not yet been fetched from the SqueezeServer.  It tells the provider 
+
+TO BE CONTINUE
