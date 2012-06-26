@@ -14,6 +14,26 @@ Note that this is still very much a work in progress.  Many of the classes are p
 
 = The implementation =
 
+== Basic idea ==
+
+The code uses Android's native support for SQLite databases.
+
+The code that interacts with the data (e.g., to display it) interacts with the database in the normal way -- it's backed by a content provider that provides a cursor over the data.
+
+The database starts out empty, and is pre-populated to 'n' empty rows (n determined by querying the server to discover e.g. how many artists there are).
+
+The cursor and content provider classes work in concert.  When the cursor's methods to read data are called, the cursor checks to see whether or not there is actual data at that row, or whether it's still empty.
+
+If the row is empty then the cursor figures out which "page" of data needs to be fetched from the server, tells the provider to fetch the data (the provider has to do this because Android cursors can't bind to Android services, but providers can) and returns a "Loading..." value.
+
+The provider waits for results to come back from the server, and inserts them in to the database.  By calling `notifyChange()` after it has done this anything that's displaying data will requery the DB via the cursor.  The cursor discovers that there's live data in the database, and returns that.
+
+There are a few additional wrinkles around making sure that the cache is consistent with the server; the server knows when it last rescanned the music database -- if the rescan time is newer than the cache then we throw it away and start with a clean cache.
+
+Cursors also support an out of band communication mechanism, the `respond()` method.  The code uses this so that activities can tell the cursor whether they want live updates or not. 
+
+== How it works ==
+
 Walking through the activity that lists all the artists, ArtistsListActivity.
 
 We create the class as normal, and select the `artists_list_activity` layout.
@@ -63,4 +83,4 @@ A cursor knows whether "live updates" of data are currently in effect.  Data is 
 The overridden method checks to see if there is any data for this column in this row.  If there isn't it 
 assumes that the data has not yet been fetched from the SqueezeServer.  It tells the provider 
 
-TO BE CONTINUE
+TO BE CONTINUED
