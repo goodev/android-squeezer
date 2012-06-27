@@ -120,3 +120,13 @@ A concrete provider, like `ArtistCacheProvider`, follows a standard pattern:
   * Implements the callback methods the service uses to deliver data.
 
   * Implements `requestPage()` to call the appropriate service method to start requesting data.
+
+= State of the code =
+
+I'm still actively experimenting with this.
+
+At the time of writing, I've written cursors / providers for albums, artists, songs, genres, and years.  There was a lot of cut and paste of code, and I'm at the point where I'm in the middle of resolving that, pushing some code up in to superclasses, figuring out what's generic and what isn't, and so forth, so the code is not yet production ready.
+
+Playlists, new music, music folder browsing... not yet implemented.  For those I'm not sure whether keeping the current method might make more sense, since the volume of data is (maybe) much smaller, so it's much less of a burden to fetch it the way that we currently do.
+
+I also think that search should continue to use the current method, rather than trying to implement search by querying over the database cache.
