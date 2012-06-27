@@ -30,7 +30,7 @@ The provider waits for results to come back from the server, and inserts them in
 
 There are a few additional wrinkles around making sure that the cache is consistent with the server; the server knows when it last rescanned the music database -- if the rescan time is newer than the cache then we throw it away and start with a clean cache.
 
-Cursors also support an out of band communication mechanism, the `respond()` method.  The code uses this so that activities can tell the cursor whether they want live updates or not. 
+Cursors also support an out of band communication mechanism, the `respond()` method.  The code uses this so that activities can tell the cursor whether they want live updates or not (e.g., a listfragment can use this when the user is flinging the list to tell the cursor not to request missing data), and whether a specific page should be requested.
 
 == How it works ==
 
@@ -78,9 +78,45 @@ So far this is all pretty standard techniques for populating a list with data fr
 
 The cursors override `getString()`, which is called whenever the list needs to display some data for a row.
 
-A cursor knows whether "live updates" of data are currently in effect.  Data is updated live if the list is not being flung.  
+A cursor knows whether "live updates" of data are currently in effect because the activity tells it.  Data is updated live if the list is not being flung.  
 
-The overridden method checks to see if there is any data for this column in this row.  If there isn't it 
-assumes that the data has not yet been fetched from the SqueezeServer.  It tells the provider 
+`getString()` checks to see if there is any data for this column in this row.  If there isn't it 
+assumes that the data has not yet been fetched from the SqueezeServer.  It tells the provider to request the page (the provider's `maybeRequestPage()` method) and returns default data.
 
-TO BE CONTINUED
+A cursor also implements the `respond()` method for out of band communication, as discussed earlier.
+
+At the time of writing, the different cursor implementations share a lot of code.  Future work will involve tidying this up, and (probably) have a handful of cursor types, probably one for entries with album art, and one without.
+
+== Provider ==
+
+The provider's class hierarchy is ContentProvider -> GenericCacheProvider -> `<Specific>`CacheProvider (e.g., ArtistCacheProvider).
+
+GenericCacheProvider is abstract, and contains the bulk of the code.
+
+The provider has a connection to the service.
+
+The inner `DatabaseHelper` class is responsible for managing the underlying database. The key method here is `maybeRebuildCache()`, which takes care of (re-)creating the database as necessary, if it doesn't exist, or if we think that the data on the server is newer than the data in the cache.
+
+We store this in a shared preference called `<uuid>`:lastscan, where `<uuid>` is the server's UUID.
+
+Most of the rest of the methods in the provider are standard for all content providers, per the documentation at http://developer.android.com/guide/topics/providers/content-provider-creating.html.
+
+In addition, `GenericCacheProvider` implements `maybeRequestPage()`, which determines whether a page of data needs to be requested from the server.  If it does, it uses `requestPage()` to get the data. This is abstract in `GenericCacheProvider`, so subclasses must implement it.
+
+A concrete provider, like `ArtistCacheProvider`, follows a standard pattern:
+
+  * An implementation of `onServiceConnected()`, which should register a callback to receive pages of data from the server.
+
+  * An inner class that implements `BaseColumns`, which is a [http://developer.android.com/guide/topics/providers/content-provider-creating.html#ContractClass contract class] for other classes that want to access this data.
+
+  * An inner class that extends `DatabaseHelper` and fills in the `onCreate()` and `onUpgrade()` methods.
+
+  * Extends `onCreate()` to set various table-specific parameters.
+
+  * Implements `WrapCursor()`, to ensure that the returned cursor is of the correct type.
+
+  * Implements `getTotalRows()` in a provider-specific way.
+
+  * Implements the callback methods the service uses to deliver data.
+
+  * Implements `requestPage()` to call the appropriate service method to start requesting data.
