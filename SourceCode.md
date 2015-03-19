@@ -1,0 +1,11 @@
+# Use Git #
+
+The source code is at GitHub:
+
+> http://github.com/nikclayton/android-squeezer/tree/master
+
+To check it out:
+
+> $ git clone git://github.com/nikclayton/android-squeezer.git
+
+From there, import in to your IDE of choice, and it should build cleanly against any version of the Android SDK from API level 7 onwards -- that's Android 2.1 (http://developer.android.com/sdk/android-2.1.html).

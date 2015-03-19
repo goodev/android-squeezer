@@ -1,0 +1,130 @@
+# The cache-server-data branch #
+
+The cache-server-data branch has experimental code that implements a cache of data returned from the server, so that the client doesn't have to re-fetch it every time (for example) the list of all songs is displayed.
+
+Other benefits:
+
+  * A lot of the specialised view logic can disappear, since we're just loading database rows in to views.
+  * We can use CursorLoaders to get asynchronous loading of the data for free.
+  * Homescreen widgets can query the content provider and not re-implement a lot of the application logic.
+
+Note that this is still very much a work in progress.  Many of the classes are probably not in their final location yet.
+
+# The implementation #
+
+## Basic idea ##
+
+The code uses Android's native support for SQLite databases.
+
+The code that interacts with the data (e.g., to display it) interacts with the database in the normal way -- it's backed by a content provider that provides a cursor over the data.
+
+The database starts out empty, and is pre-populated to 'n' empty rows (n determined by querying the server to discover e.g. how many artists there are).
+
+The cursor and content provider classes work in concert.  When the cursor's methods to read data are called, the cursor checks to see whether or not there is actual data at that row, or whether it's still empty.
+
+If the row is empty then the cursor figures out which "page" of data needs to be fetched from the server, tells the provider to fetch the data (the provider has to do this because Android cursors can't bind to Android services, but providers can) and returns a "Loading..." value.
+
+The provider waits for results to come back from the server, and inserts them in to the database.  By calling `notifyChange()` after it has done this anything that's displaying data will requery the DB via the cursor.  The cursor discovers that there's live data in the database, and returns that.
+
+There are a few additional wrinkles around making sure that the cache is consistent with the server; the server knows when it last rescanned the music database -- if the rescan time is newer than the cache then we throw it away and start with a clean cache.
+
+Cursors also support an out of band communication mechanism, the `respond()` method.  The code uses this so that activities can tell the cursor whether they want live updates or not (e.g., a listfragment can use this when the user is flinging the list to tell the cursor not to request missing data), and whether a specific page should be requested.
+
+## How it works ##
+
+Walking through the activity that lists all the artists, ArtistsListActivity.
+
+We create the class as normal, and select the `artists_list_activity` layout.
+
+```
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.artists_list_activity);
+    }
+```
+
+This layout contains a reference `ArtistsListFragment`, which subclasses [ListFragment](http://developer.android.com/reference/android/app/ListFragment.html) to display a list of items.
+
+Most of the rest of the work is in `ArtistsListFragment` or classes it calls.
+
+`ArtistsListFragment` requires that activities that host it implement the `OnArtistSelectedListener` interface, which the fragment will use to call back to the containing activity when the user has selected an artist.
+
+The fragment uses a cursor loader which it initialises to use the fragment as the source of callback methods (a common pattern, see http://developer.android.com/guide/components/loaders.html#starting).
+
+```
+getLoaderManager().initLoader(0, null, this);
+```
+
+This will call `onCreateLoader()`.
+
+```
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        return new CursorLoader(getActivity(),
+                ProviderUri.ARTIST.getContentUri(),
+                boundColumns, null, null, null);
+    }
+```
+
+In this case, `boundColumns` is an array that references just the ID and artist name columns in the database, and the three nulls indicate that all the data will be returned in the default sort order.
+
+The call to `ProviderUri.ARTIST.getContentUri()` results in a call to `ArtistCacheProvider.query()`.  This is implemented in `GenericCacheProvider.query()`, which creates a `GenericCacheCursor`, and calls the abstract `WrapCursor()` method. `ArtistCacheProvider` implements `WrapCursor()`, and the result is that a new `ArtistCacheCursor` is loaded.
+
+So far this is all pretty standard techniques for populating a list with data from a SQLite database on Android.  Where it differs is the additional special responsibilities that the cursor and provider have.
+
+## Cursor ##
+
+The cursors override `getString()`, which is called whenever the list needs to display some data for a row.
+
+A cursor knows whether "live updates" of data are currently in effect because the activity tells it.  Data is updated live if the list is not being flung.
+
+`getString()` checks to see if there is any data for this column in this row.  If there isn't it
+assumes that the data has not yet been fetched from the SqueezeServer.  It tells the provider to request the page (the provider's `maybeRequestPage()` method) and returns default data.
+
+A cursor also implements the `respond()` method for out of band communication, as discussed earlier.
+
+At the time of writing, the different cursor implementations share a lot of code.  Future work will involve tidying this up, and (probably) have a handful of cursor types, probably one for entries with album art, and one without.
+
+## Provider ##
+
+The provider's class hierarchy is ContentProvider -> GenericCacheProvider -> `<Specific>`CacheProvider (e.g., ArtistCacheProvider).
+
+GenericCacheProvider is abstract, and contains the bulk of the code.
+
+The provider has a connection to the service.
+
+The inner `DatabaseHelper` class is responsible for managing the underlying database. The key method here is `maybeRebuildCache()`, which takes care of (re-)creating the database as necessary, if it doesn't exist, or if we think that the data on the server is newer than the data in the cache.
+
+We store this in a shared preference called `<uuid>`:lastscan, where `<uuid>` is the server's UUID.
+
+Most of the rest of the methods in the provider are standard for all content providers, per the documentation at http://developer.android.com/guide/topics/providers/content-provider-creating.html.
+
+In addition, `GenericCacheProvider` implements `maybeRequestPage()`, which determines whether a page of data needs to be requested from the server.  If it does, it uses `requestPage()` to get the data. This is abstract in `GenericCacheProvider`, so subclasses must implement it.
+
+A concrete provider, like `ArtistCacheProvider`, follows a standard pattern:
+
+  * An implementation of `onServiceConnected()`, which should register a callback to receive pages of data from the server.
+
+  * An inner class that implements `BaseColumns`, which is a [contract class](http://developer.android.com/guide/topics/providers/content-provider-creating.html#ContractClass) for other classes that want to access this data.
+
+  * An inner class that extends `DatabaseHelper` and fills in the `onCreate()` and `onUpgrade()` methods.
+
+  * Extends `onCreate()` to set various table-specific parameters.
+
+  * Implements `WrapCursor()`, to ensure that the returned cursor is of the correct type.
+
+  * Implements `getTotalRows()` in a provider-specific way.
+
+  * Implements the callback methods the service uses to deliver data.
+
+  * Implements `requestPage()` to call the appropriate service method to start requesting data.
+
+# State of the code #
+
+I'm still actively experimenting with this.
+
+At the time of writing, I've written cursors / providers for albums, artists, songs, genres, and years.  There was a lot of cut and paste of code, and I'm at the point where I'm in the middle of resolving that, pushing some code up in to superclasses, figuring out what's generic and what isn't, and so forth, so the code is not yet production ready.
+
+Playlists, new music, music folder browsing... not yet implemented.  For those I'm not sure whether keeping the current method might make more sense, since the volume of data is (maybe) much smaller, so it's much less of a burden to fetch it the way that we currently do.
+
+I also think that search should continue to use the current method, rather than trying to implement search by querying over the database cache.
